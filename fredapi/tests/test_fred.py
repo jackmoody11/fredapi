@@ -18,9 +18,7 @@ import fredapi.fred
 # (https://api.stlouisfed.org/fred...)
 # Make sure you FRED_API_KEY is set up and internet works.
 fake_fred_call = True
-fred_api_key = 'secret'
-if not fake_fred_call:
-    fred_api_key = fredapi.Fred().api_key
+fred_api_key = 'secret' if fake_fred_call else fredapi.Fred().api_key
 
 
 class HTTPCall:
@@ -38,16 +36,15 @@ class HTTPCall:
         side_effect: side_effect to the call if any.
 
         """
-        self.url = '{}/{}&api_key={}'.format(self.root_url, rel_url,
-                                             fred_api_key)
+        self.url = f'{self.root_url}/{rel_url}&api_key={fred_api_key}'
         self.response = response
         self.side_effect = side_effect
 
 
-sp500_obs_call = HTTPCall('series/observations?series_id=SP500&{}&{}'.
-                          format('observation_start=2014-09-02',
-                                 'observation_end=2014-09-05'),
-                          response=textwrap.dedent('''\
+sp500_obs_call = HTTPCall(
+    'series/observations?series_id=SP500&observation_start=2014-09-02&observation_end=2014-09-05',
+    response=textwrap.dedent(
+        '''\
 <?xml version="1.0" encoding="utf-8" ?>
 <observations realtime_start="2015-06-28" realtime_end="2015-06-28"
               observation_start="2014-09-02"
@@ -63,7 +60,9 @@ sp500_obs_call = HTTPCall('series/observations?series_id=SP500&{}&{}'.
                date="2014-09-04" value="1997.65"/>
   <observation realtime_start="2015-06-28" realtime_end="2015-06-28"
                date="2014-09-05" value="2007.71"/>
-</observations>'''))
+</observations>'''
+    ),
+)
 search_call = HTTPCall('release/series?release_id=175&' +
                        'order_by=series_id&sort_order=asc',
                        response=textwrap.dedent('''\
@@ -182,8 +181,7 @@ class TestFred(unittest.TestCase):
     @mock.patch('fredapi.fred.urlopen')
     def test_invalid_id_in_get_series(self, urlopen):
         """Test invalid series id in get_series."""
-        url = ('{}/series/observations?series_id=invalid&api_key={}'.
-               format(self.root_url, fred_api_key))
+        url = f'{self.root_url}/series/observations?series_id=invalid&api_key={fred_api_key}'
         # some of the argument cannot be mocked easily.
         error = textwrap.dedent('''\
                 <?xml version="1.0" encoding="utf-8" ?>
@@ -200,8 +198,7 @@ class TestFred(unittest.TestCase):
     @mock.patch('fredapi.fred.urlopen')
     def test_invalid_id_in_get_series_info(self, urlopen):
         """Test invalid series id in get_series_info."""
-        url = '{}/series?series_id=invalid&api_key={}'.format(self.root_url,
-                                                              fred_api_key)
+        url = f'{self.root_url}/series?series_id=invalid&api_key={fred_api_key}'
         error_msg = 'Bad Request.  The series does not exist.'
         # some of the argument cannot be mocked easily.
         xml_error = textwrap.dedent('''\
@@ -219,8 +216,7 @@ class TestFred(unittest.TestCase):
     @mock.patch('fredapi.fred.urlopen')
     def test_invalid_kwarg_in_get_series(self, urlopen):
         """Test invalid keyword argument in call to get_series."""
-        url = '{}/series?series_id=invalid&api_key={}'.format(self.root_url,
-                                                              fred_api_key)
+        url = f'{self.root_url}/series?series_id=invalid&api_key={fred_api_key}'
         side_effect = fredapi.fred.HTTPError(url, 400, '', '', sys.stderr)
         self.prepare_urlopen(urlopen, side_effect=side_effect)
         with self.assertRaises(ValueError) as context:

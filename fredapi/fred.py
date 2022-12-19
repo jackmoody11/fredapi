@@ -39,9 +39,8 @@ class Fred:
         if api_key is not None:
             self.api_key = api_key
         elif api_key_file is not None:
-            f = open(api_key_file, 'r')
-            self.api_key = f.readline().strip()
-            f.close()
+            with open(api_key_file, 'r') as f:
+                self.api_key = f.readline().strip()
         else:
             self.api_key = os.environ.get('FRED_API_KEY')
 
@@ -91,12 +90,11 @@ class Fred:
         info : Series
             a pandas Series containing information about the Fred series
         """
-        url = "%s/series?series_id=%s" % (self.root_url, series_id)
+        url = f"{self.root_url}/series?series_id={series_id}"
         root = self.__fetch_data(url)
         if root is None or not len(root):
             raise ValueError('No info exists for series id: ' + series_id)
-        info = pd.Series(list(root)[0].attrib)
-        return info
+        return pd.Series(list(root)[0].attrib)
 
     def get_series(self, series_id, observation_start=None, observation_end=None, **kwargs):
         """
@@ -118,7 +116,7 @@ class Fred:
         data : Series
             a Series where each index is the observation date and the value is the data for the Fred series
         """
-        url = "%s/series/observations?series_id=%s" % (self.root_url, series_id)
+        url = f"{self.root_url}/series/observations?series_id={series_id}"
         if observation_start is not None:
             observation_start = pd.to_datetime(observation_start,
                                                errors='raise')
@@ -134,10 +132,7 @@ class Fred:
         data = {}
         for child in root:
             val = child.get('value')
-            if val == self.nan_char:
-                val = float('NaN')
-            else:
-                val = float(val)
+            val = float('NaN') if val == self.nan_char else float(val)
             data[self._parse(child.get('date'))] = val
         return pd.Series(data)
 
@@ -175,8 +170,7 @@ class Fred:
         """
         df = self.get_series_all_releases(series_id)
         first_release = df.groupby('date').head(1)
-        data = first_release.set_index('date')['value']
-        return data
+        return first_release.set_index('date')['value']
 
     def get_series_as_of_date(self, series_id, as_of_date):
         """
@@ -197,8 +191,7 @@ class Fred:
         """
         as_of_date = pd.to_datetime(as_of_date)
         df = self.get_series_all_releases(series_id)
-        data = df[df['realtime_start'] <= as_of_date]
-        return data
+        return df[df['realtime_start'] <= as_of_date]
 
     def get_series_all_releases(self, series_id, realtime_start=None, realtime_end=None):
         """
@@ -228,21 +221,14 @@ class Fred:
             realtime_start = self.earliest_realtime_start
         if realtime_end is None:
             realtime_end = self.latest_realtime_end
-        url = "%s/series/observations?series_id=%s&realtime_start=%s&realtime_end=%s" % (self.root_url,
-                                                                                         series_id,
-                                                                                         realtime_start,
-                                                                                         realtime_end)
+        url = f"{self.root_url}/series/observations?series_id={series_id}&realtime_start={realtime_start}&realtime_end={realtime_end}"
         root = self.__fetch_data(url)
         if root is None:
             raise ValueError('No data exists for series id: ' + series_id)
         data = {}
-        i = 0
-        for child in root:
+        for i, child in enumerate(root):
             val = child.get('value')
-            if val == self.nan_char:
-                val = float('NaN')
-            else:
-                val = float(val)
+            val = float('NaN') if val == self.nan_char else float(val)
             realtime_start = self._parse(child.get('realtime_start'))
             # realtime_end = self._parse(child.get('realtime_end'))
             date = self._parse(child.get('date'))
@@ -251,7 +237,6 @@ class Fred:
                        # 'realtime_end': realtime_end,
                        'date': date,
                        'value': val}
-            i += 1
         data = pd.DataFrame(data).T
         return data
 
@@ -270,14 +255,11 @@ class Fred:
         dates : list
             list of vintage dates
         """
-        url = "%s/series/vintagedates?series_id=%s" % (self.root_url, series_id)
+        url = f"{self.root_url}/series/vintagedates?series_id={series_id}"
         root = self.__fetch_data(url)
         if root is None:
             raise ValueError('No vintage date exists for series id: ' + series_id)
-        dates = []
-        for child in root:
-            dates.append(self._parse(child.text))
-        return dates
+        return [self._parse(child.text) for child in root]
 
     def __do_series_search(self, url):
         """
@@ -325,11 +307,13 @@ class Fred:
             if order_by in order_by_options:
                 url = url + '&order_by=' + order_by
             else:
-                raise ValueError('%s is not in the valid list of order_by options: %s' % (order_by, str(order_by_options)))
+                raise ValueError(
+                    f'{order_by} is not in the valid list of order_by options: {order_by_options}'
+                )
 
         if filter is not None:
             if len(filter) == 2:
-                url = url + '&filter_variable=%s&filter_value=%s' % (filter[0], filter[1])
+                url = url + f'&filter_variable={filter[0]}&filter_value={filter[1]}'
             else:
                 raise ValueError('Filter should be a 2 item tuple like (filter_variable, filter_value)')
 
@@ -338,17 +322,15 @@ class Fred:
             if sort_order in sort_order_options:
                 url = url + '&sort_order=' + sort_order
             else:
-                raise ValueError('%s is not in the valid list of sort_order options: %s' % (sort_order, str(sort_order_options)))
+                raise ValueError(
+                    f'{sort_order} is not in the valid list of sort_order options: {sort_order_options}'
+                )
 
         data, num_results_total = self.__do_series_search(url)
         if data is None:
             return data
 
-        if limit == 0:
-            max_results_needed = num_results_total
-        else:
-            max_results_needed = limit
-
+        max_results_needed = num_results_total if limit == 0 else limit
         if max_results_needed > self.max_results_per_request:
             for i in range(1, max_results_needed // self.max_results_per_request + 1):
                 offset = i * self.max_results_per_request
@@ -381,10 +363,8 @@ class Fred:
         info : DataFrame
             a DataFrame containing information about the matching Fred series
         """
-        url = "%s/series/search?search_text=%s&" % (self.root_url,
-                                                    quote_plus(text))
-        info = self.__get_search_results(url, limit, order_by, sort_order, filter)
-        return info
+        url = f"{self.root_url}/series/search?search_text={quote_plus(text)}&"
+        return self.__get_search_results(url, limit, order_by, sort_order, filter)
 
     def search_by_release(self, release_id, limit=0, order_by=None, sort_order=None, filter=None):
         """
@@ -414,7 +394,7 @@ class Fred:
         url = "%s/release/series?release_id=%d" % (self.root_url, release_id)
         info = self.__get_search_results(url, limit, order_by, sort_order, filter)
         if info is None:
-            raise ValueError('No series exists for release id: ' + str(release_id))
+            raise ValueError(f'No series exists for release id: {str(release_id)}')
         return info
 
     def search_by_category(self, category_id, limit=0, order_by=None, sort_order=None, filter=None):
@@ -446,5 +426,5 @@ class Fred:
                                                       category_id)
         info = self.__get_search_results(url, limit, order_by, sort_order, filter)
         if info is None:
-            raise ValueError('No series exists for category id: ' + str(category_id))
+            raise ValueError(f'No series exists for category id: {str(category_id)}')
         return info
